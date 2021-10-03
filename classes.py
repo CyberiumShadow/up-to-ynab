@@ -263,7 +263,7 @@ class YNABBudget(YNABBase):
         for transaction in self.transactions:
             if transaction.categoryId and "Transfer : " not in transaction.payeeName:
                 if transaction.categoryId not in categories:
-                    print(transaction)
+                    print(transaction.id)
                     response = requests.get(
                         helper.YNAB_BASE_URL
                         + "budgets/"
