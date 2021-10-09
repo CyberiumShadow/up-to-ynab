@@ -71,12 +71,46 @@ class UpTransaction:
             "databases/up_accounts", self.accountId
         ).name
 
+        if getenv("DEBUG_MODE"):
+            print(self)
+
+    def __str__(self) -> str:
+        return (
+            "UP TRANSACTION:\n"
+            + "Date: "
+            + self.date
+            + "\n"
+            + "Value: "
+            + str(self.value)
+            + "\n"
+            + "Payee: "
+            + self.payee
+            + "\n"
+            + "Account: "
+            + self.accountName
+            + "\n"
+            + "Message: "
+            + self.message
+            + "\n"
+            + "Status: "
+            + self.status
+            + "\n"
+            + "Is Internal: "
+            + str(self.isInternal)
+        )
+
 
 class UpAccount:
     def __init__(self, payload: dict):
         self.id = payload["id"]
         self.name = payload["attributes"]["displayName"]
         self.type = payload["attributes"]["accountType"]
+
+        if getenv("DEBUG_MODE"):
+            print(self)
+
+    def __str__(self) -> str:
+        return "UP ACCOUNT:\nName: " + self.name + "\nType: " + self.type
 
 
 # YNAB API CLASSES
@@ -94,7 +128,9 @@ class YNABTransaction(YNABBase):
             self.date = jsonPayload["date"][0:10]
             self.amount = int(float(jsonPayload["amount"])) * 1000
             self.categoryId = jsonPayload["category_id"]
+            self.multi = False if jsonPayload["subtransactions"] == [] else True
             self.memo = jsonPayload["memo"]
+            self.categories = []
 
             self.payeeId = jsonPayload["payee_id"]
             if "payee_name" in jsonPayload:
@@ -112,6 +148,7 @@ class YNABTransaction(YNABBase):
             self.date = upTransaction.date[0:10]
             self.amount = int(upTransaction.value * 1000)
             self.memo = upTransaction.message
+            self.payeeId = None
 
             if upTransaction.payee == "Round Up":
                 self.payeeName = None
@@ -150,6 +187,9 @@ class YNABTransaction(YNABBase):
                     else []
                 )
 
+        if getenv("DEBUG_MODE"):
+            print(self)
+
     def sendNewYNABTransaction(self):
         """Sends the YNAB Transaction to YNAB"""
         try:
@@ -166,23 +206,33 @@ class YNABTransaction(YNABBase):
                     "memo": self.memo,
                 }
             }
-            if getenv("DEBUG_MODE") == "True":
-                print(body)
-        except:
-            body = {}
-            print(
-                "Looks like something has gone wrong in the YNAB Transaction payload generator, here's the body: \n"
-                + json.dumps(self.__dict__)
-            )
 
-        response = requests.post(
-            helper.YNAB_BASE_URL
-            + "budgets/"
-            + helper.getEnvs("budgetId")
-            + "/transactions",
-            data=json.dumps(body),
-            headers=helper.setHeaders("ynab"),
-        )
+            response = requests.post(
+                helper.YNAB_BASE_URL
+                + "budgets/"
+                + helper.getEnvs("budgetId")
+                + "/transactions",
+                data=json.dumps(body),
+                headers=helper.setHeaders("ynab"),
+            )
+        except:
+            print(
+                "Looks like something has gone wrong in the YNAB Transaction payload generator, here's some info:"
+            )
+            if self.accountId:
+                print("Account ID: " + self.accountId)
+            if self.date:
+                print("Date: " + self.date)
+            if self.amount:
+                print("Amount: " + str(self.amount))
+            if self.payeeName:
+                print("Payee Name: " + self.payeeName)
+            if self.payeeId:
+                print("Payee ID: " + self.payeeId)
+            if self.categories[0]:
+                print("Category: " + self.categories[0].__dict__)
+            if self.memo:
+                print("Memo: " + self.memo)
 
         try:
             response.raise_for_status()
@@ -194,6 +244,19 @@ class YNABTransaction(YNABBase):
                 + "\nError: "
                 + http_err.response.reason
             )
+
+    def __str__(self) -> str:
+        return (
+            "YNAB TRANSACTION:\n"
+            + "Date: "
+            + self.date
+            + "\n"
+            + "Amount: "
+            + str(self.amount)
+            + "\n"
+            + "Payee: "
+            + (self.payeeName if self.payeeName else "Internal Transfer")
+        )
 
 
 class YNABAccount(YNABBase):
@@ -235,10 +298,19 @@ class YNABBudget(YNABBase):
         self.setPayeeDatabase()
 
         self.transactions = []
-        for transaction in payload["transactions"]:
-            self.transactions.append(YNABTransaction(jsonPayload=transaction))
-        print("Setting up Payee->Category Databases...")
-        self.setPayeeCategoryDatabase()
+        response = requests.get(
+            helper.YNAB_BASE_URL
+            + "budgets/"
+            + helper.getEnvs("budgetId")
+            + "/transactions",
+            headers=helper.setHeaders("ynab"),
+        )
+
+        if response.status_code == 200:
+            for transaction in response.json()["data"]["transactions"]:
+                self.transactions.append(YNABTransaction(jsonPayload=transaction))
+            print("Setting up Payee->Category Databases...")
+            self.setPayeeCategoryDatabase()
 
     def setAccountDatabase(self):
         """Sets the account database"""
@@ -261,7 +333,11 @@ class YNABBudget(YNABBase):
         categories = shelve.open("databases/categories__id")
 
         for transaction in self.transactions:
-            if transaction.categoryId and "Transfer : " not in transaction.payeeName:
+            if (
+                transaction.categoryId
+                and "Transfer : " not in transaction.payeeName
+                and not transaction.multi
+            ):
                 if transaction.categoryId not in categories:
                     response = requests.get(
                         helper.YNAB_BASE_URL
