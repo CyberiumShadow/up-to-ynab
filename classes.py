@@ -4,11 +4,17 @@ import helper
 import shelve
 import json
 
-INTERNAL_TRANSFER_STRINGS = ["Transfer to ", "Cover to ", "Quick save transfer to "]
+INTERNAL_TRANSFER_STRINGS = [
+    "Transfer to ",
+    "Cover to ",
+    "Quick save transfer to ",
+    "Forward to ",
+]
 INCORRECT_TRANSFER_STRINGS = [
     "Transfer from ",
     "Cover from ",
     "Quick save transfer from ",
+    "Forward from ",
 ]
 
 # UP API CLASSES
@@ -71,7 +77,7 @@ class UpTransaction:
             "databases/up_accounts", self.accountId
         ).name
 
-        if getenv("DEBUG_MODE"):
+        if getenv("DEBUG_MODE") == "True":
             print("--------------------------------------------------------")
             print(self)
 
@@ -88,10 +94,10 @@ class UpTransaction:
             + self.payee
             + "\n"
             + "Account: "
-            + self.accountName
+            + (self.accountName if self.accountName else "None")
             + "\n"
             + "Message: "
-            + self.message
+            + (self.message if self.message else "None")
             + "\n"
             + "Status: "
             + self.status
@@ -107,7 +113,7 @@ class UpAccount:
         self.name = payload["attributes"]["displayName"]
         self.type = payload["attributes"]["accountType"]
 
-        if getenv("DEBUG_MODE"):
+        if getenv("DEBUG_MODE") == "True":
             print(self)
 
     def __str__(self) -> str:
@@ -187,7 +193,7 @@ class YNABTransaction(YNABBase):
                     else []
                 )
 
-        if getenv("DEBUG_MODE"):
+        if getenv("DEBUG_MODE") == "True":
             print(self)
 
     def sendNewYNABTransaction(self):
@@ -211,7 +217,7 @@ class YNABTransaction(YNABBase):
                 }
             }
 
-            if getenv("DEBUG_MODE"):
+            if getenv("DEBUG_MODE") == "True":
                 print(body)
 
             response = requests.post(
